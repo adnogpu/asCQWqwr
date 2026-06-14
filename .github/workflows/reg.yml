@@ -125,7 +125,7 @@ jobs:
         shell: pwsh
 
       - name: 安装 Node 依赖 (playwright-core)
-        run: npm install playwright-core
+        run: npm install rebrowser-playwright-core
         working-directory: ${{ github.workspace }}
         shell: pwsh
 
