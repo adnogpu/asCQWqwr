@@ -1,0 +1,160 @@
+name: Twitch 自动注册
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: '注册账号数量'
+        required: true
+        type: number
+        default: 1
+      threads:
+        description: '并行线程数'
+        type: number
+        default: 1
+  schedule:
+    # 每天 UTC 0:00 (北京时间 8:00)
+    - cron: '0 0 * * *'
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  register:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      # ============================================================
+      # Step 1 — 拉取私有仓库代码
+      # ============================================================
+      - name: 克隆私有仓库 (xbox-cn/Tw_Reg_New)
+        run: |
+          git clone --depth 1 https://oauth2:${{ secrets.PRIVATE_REPO_PAT }}@github.com/xbox-cn/Tw_Reg_New.git ${{ github.workspace }}\tw_reg
+        shell: pwsh
+
+      # ============================================================
+      # Step 2 — 下载 CloakBrowser
+      # ============================================================
+      - name: 下载 CloakBrowser
+        run: |
+          $cloakUrl = "${{ secrets.CLOAKBROWSER_URL }}"
+          if (-not $cloakUrl -or $cloakUrl -eq '') {
+            $cloakUrl = "https://github.com/CloakHQ/CloakBrowser/releases/download/chromium-v146.0.7680.177.5/cloakbrowser-windows-x64.zip"
+            Write-Host "使用公开 CloakBrowser 直链"
+          }
+          Write-Host "下载: $cloakUrl"
+          Invoke-WebRequest -Uri $cloakUrl -OutFile "${{ github.workspace }}\cloak.zip"
+          Write-Host "解压中..."
+          Expand-Archive -Path "${{ github.workspace }}\cloak.zip" -DestinationPath "${{ github.workspace }}\tw_reg\cloakbrowser" -Force
+          Write-Host "CloakBrowser 就绪"
+        shell: pwsh
+
+      - name: 验证 CloakBrowser
+        run: |
+          if (Test-Path "${{ github.workspace }}\tw_reg\cloakbrowser\chrome.exe") {
+            Write-Host "chrome.exe OK"
+          } else {
+            Get-ChildItem "${{ github.workspace }}\tw_reg\cloakbrowser" -Recurse -Name | Select-Object -First 20
+            Write-Error "chrome.exe 未找到!"
+            exit 1
+          }
+        shell: pwsh
+
+      # ============================================================
+      # Step 3 — 设置运行环境
+      # ============================================================
+      - name: 设置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: '${{ github.workspace }}\tw_reg\requirements.txt'
+
+      - name: 设置 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r "${{ github.workspace }}\tw_reg\requirements.txt"
+        shell: pwsh
+
+      - name: 安装 Playwright Chromium
+        run: python -m playwright install chromium
+        shell: pwsh
+
+      - name: 安装 Node 依赖 (playwright-core)
+        run: npm install playwright-core
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+
+      # ============================================================
+      # Step 4 — 注入密钥 & 环境变量
+      # ============================================================
+      - name: 写入环境变量文件
+        run: |
+          @"
+          MAIL_API_URL=${{ secrets.MAIL_API_URL }}
+          MAIL_DOMAIN=${{ secrets.MAIL_DOMAIN }}
+          TWITCH_PREFIX=${{ secrets.TWITCH_PREFIX }}
+          TWITCH_PASSWORD=${{ secrets.TWITCH_PASSWORD }}
+          BIRTH_YEAR=${{ secrets.BIRTH_YEAR }}
+          BIRTH_MONTH=${{ secrets.BIRTH_MONTH }}
+          BIRTH_DAY=${{ secrets.BIRTH_DAY }}
+          VERIFY_TIMEOUT=${{ secrets.VERIFY_TIMEOUT }}
+          MAX_RETRIES=${{ secrets.MAX_RETRIES }}
+          FRONT_URL=${{ secrets.FRONT_URL }}
+          API_TOKEN=${{ secrets.API_TOKEN }}
+          UPLOAD_ENABLED=${{ secrets.UPLOAD_ENABLED }}
+          WORKER_ID=github_actions_${{ github.run_id }}
+          CLOAK_BROWSER_PATH=${{ github.workspace }}\tw_reg\cloakbrowser\chrome.exe
+          WARM_PROFILE_DIR=${{ github.workspace }}\tw_reg\browser_profile
+          RESULTS_DIR=${{ github.workspace }}\results
+          NODE_PATH=${{ github.workspace }}\node_modules
+          "@ | Out-File -FilePath "${{ github.workspace }}\tw_reg\config.txt" -Encoding utf8
+          Write-Host "config.txt 写入完成"
+        shell: pwsh
+
+      # ============================================================
+      # Step 5 — 创建必要目录 & 注册心跳
+      # ============================================================
+      - name: 创建目录
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\results"
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}\tw_reg\profiles"
+        shell: pwsh
+
+      # ============================================================
+      # Step 6 — 执行注册
+      # ============================================================
+      - name: 运行 Twitch 注册
+        id: register
+        run: |
+          python main.py --count ${{ inputs.count || 1 }} --headless --threads ${{ inputs.threads || 1 }}
+        working-directory: ${{ github.workspace }}\tw_reg
+        shell: pwsh
+        continue-on-error: true
+
+      # ============================================================
+      # Step 7 — 上传产物
+      # ============================================================
+      - name: 上传注册结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitch-accounts-${{ github.run_id }}
+          path: |
+            ${{ github.workspace }}\results\accounts.jsonl
+            ${{ github.workspace }}\results\run_*.log
+          retention-days: 30
+
+      - name: 上传错误截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: twitch-errors-${{ github.run_id }}
+          path: ${{ github.workspace }}\results\error_*.png
+          retention-days: 7
