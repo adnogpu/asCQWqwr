@@ -18,6 +18,12 @@ on:
 
 env:
   PYTHONUNBUFFERED: '1'
+  # CI 专用路径覆盖（环境变量优先级 > config.txt，业务配置走私有仓库 config.txt）
+  CLOAK_BROWSER_PATH: ${{ github.workspace }}\tw_reg\cloakbrowser\chrome.exe
+  WARM_PROFILE_DIR: ${{ github.workspace }}\tw_reg\browser_profile
+  RESULTS_DIR: ${{ github.workspace }}\results
+  NODE_PATH: ${{ github.workspace }}\node_modules
+  WORKER_ID: github_actions_${{ github.run_id }}
 
 jobs:
   register:
@@ -92,34 +98,7 @@ jobs:
         shell: pwsh
 
       # ============================================================
-      # Step 4 — 注入密钥 & 环境变量
-      # ============================================================
-      - name: 写入环境变量文件
-        run: |
-          @"
-          MAIL_API_URL=${{ secrets.MAIL_API_URL }}
-          MAIL_DOMAIN=${{ secrets.MAIL_DOMAIN }}
-          TWITCH_PREFIX=${{ secrets.TWITCH_PREFIX }}
-          TWITCH_PASSWORD=${{ secrets.TWITCH_PASSWORD }}
-          BIRTH_YEAR=${{ secrets.BIRTH_YEAR }}
-          BIRTH_MONTH=${{ secrets.BIRTH_MONTH }}
-          BIRTH_DAY=${{ secrets.BIRTH_DAY }}
-          VERIFY_TIMEOUT=${{ secrets.VERIFY_TIMEOUT }}
-          MAX_RETRIES=${{ secrets.MAX_RETRIES }}
-          FRONT_URL=${{ secrets.FRONT_URL }}
-          API_TOKEN=${{ secrets.API_TOKEN }}
-          UPLOAD_ENABLED=${{ secrets.UPLOAD_ENABLED }}
-          WORKER_ID=github_actions_${{ github.run_id }}
-          CLOAK_BROWSER_PATH=${{ github.workspace }}\tw_reg\cloakbrowser\chrome.exe
-          WARM_PROFILE_DIR=${{ github.workspace }}\tw_reg\browser_profile
-          RESULTS_DIR=${{ github.workspace }}\results
-          NODE_PATH=${{ github.workspace }}\node_modules
-          "@ | Out-File -FilePath "${{ github.workspace }}\tw_reg\config.txt" -Encoding utf8
-          Write-Host "config.txt 写入完成"
-        shell: pwsh
-
-      # ============================================================
-      # Step 5 — 创建必要目录 & 注册心跳
+      # Step 4 — 创建必要目录
       # ============================================================
       - name: 创建目录
         run: |
@@ -128,7 +107,7 @@ jobs:
         shell: pwsh
 
       # ============================================================
-      # Step 6 — 执行注册
+      # Step 5 — 执行注册
       # ============================================================
       - name: 运行 Twitch 注册
         id: register
@@ -139,7 +118,7 @@ jobs:
         continue-on-error: true
 
       # ============================================================
-      # Step 7 — 上传产物
+      # Step 6 — 上传产物
       # ============================================================
       - name: 上传注册结果
         if: always()
