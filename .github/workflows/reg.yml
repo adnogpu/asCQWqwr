@@ -22,10 +22,6 @@ on:
         required: false
         type: string
         default: '8.138.198.37'
-  schedule:
-    # 每天 UTC 0:00 (北京时间 8:00)
-    - cron: '0 0 * * *'
-
 env:
   PYTHONUNBUFFERED: '1'
   NODE_PATH: ${{ github.workspace }}\node_modules
