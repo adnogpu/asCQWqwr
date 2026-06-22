@@ -21,7 +21,7 @@ on:
         description: '前端服务器 IP（自动拼接 http://IP:5000）'
         required: false
         type: string
-        default: '8.138.198.37'
+        default: '64.81.112.97'
 env:
   PYTHONUNBUFFERED: '1'
   NODE_PATH: ${{ github.workspace }}\node_modules
